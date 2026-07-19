@@ -49,3 +49,5 @@ instance/
 *.log
 Scripts/
 pyvenv.cfg
+
+Include/
