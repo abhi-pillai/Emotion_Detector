@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Register - Emotion Analyzer{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <h1>Create an Account</h1>
+    <p class="subtitle">Start tracking your emotional wellbeing</p>
+
+    <div id="error-box" class="error-box" hidden></div>
+    <div id="success-box" class="success-box" hidden></div>
+
+    <form id="register-form" autocomplete="on">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" minlength="3" maxlength="80" required autofocus>
+
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" minlength="6" required>
+      <small>Minimum 6 characters</small>
+
+      <button type="submit" id="submit-btn">Register</button>
+    </form>
+
+    <p class="switch-link">Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('register-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('error-box');
+  const successBox = document.getElementById('success-box');
+  const btn = document.getElementById('submit-btn');
+  errorBox.hidden = true;
+  successBox.hidden = true;
+  btn.disabled = true;
+  btn.textContent = 'Creating account...';
+
+  try {
+    const res = await fetch('{{ url_for("register") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        password: document.getElementById('password').value,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      successBox.textContent = data.message + ' Redirecting to login...';
+      successBox.hidden = false;
+      setTimeout(() => window.location.href = '{{ url_for("login") }}', 1500);
+    } else {
+      errorBox.textContent = data.error || 'Registration failed';
+      errorBox.hidden = false;
+    }
+  } catch (err) {
+    errorBox.textContent = 'Network error. Please try again.';
+    errorBox.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Register';
+  }
+});
+</script>
+{% endblock %}

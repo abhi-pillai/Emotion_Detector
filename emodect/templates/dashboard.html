@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Emotion Analyzer{% endblock %}
+{% block content %}
+<nav class="navbar">
+  <span class="brand">Emotion Analyzer</span>
+  <span class="nav-user">Hi, {{ username }}</span>
+  <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
+</nav>
+
+<main class="dashboard">
+
+  <section class="stats-grid" id="stats-grid">
+    <div class="stat-card"><span class="stat-value" id="stat-total">-</span><span class="stat-label">Total Analyses</span></div>
+    <div class="stat-card"><span class="stat-value" id="stat-week">-</span><span class="stat-label">This Week</span></div>
+    <div class="stat-card emotion-happy"><span class="stat-value" id="stat-happy">-</span><span class="stat-label">Happy</span></div>
+    <div class="stat-card emotion-sad"><span class="stat-value" id="stat-sad">-</span><span class="stat-label">Sad</span></div>
+    <div class="stat-card emotion-angry"><span class="stat-value" id="stat-angry">-</span><span class="stat-label">Angry</span></div>
+    <div class="stat-card emotion-neutral"><span class="stat-value" id="stat-neutral">-</span><span class="stat-label">Neutral</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Analyze a Message</h2>
+    <textarea id="message-input" maxlength="2000" rows="4" placeholder="How are you feeling? Write a message..."></textarea>
+    <div class="row">
+      <button id="analyze-btn">Analyze Emotion</button>
+      <span id="analyze-status" class="status-text"></span>
+    </div>
+    <div id="analyze-result" class="result-box" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Mental State Analysis</h2>
+    <button id="mental-state-btn">Analyze My Mental State</button>
+    <span id="mental-status" class="status-text"></span>
+    <div id="mental-state-result" class="result-box" hidden></div>
+  </section>
+
+  <section class="card">
+    <div class="row space-between">
+      <h2>Emotion History</h2>
+      <button id="clear-history-btn" class="btn-danger">Clear History</button>
+    </div>
+    <div id="history-list" class="history-list">
+      <p class="empty-state">No entries yet. Analyze a message to get started.</p>
+    </div>
+  </section>
+
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

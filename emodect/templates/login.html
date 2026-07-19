@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Login - Emotion Analyzer{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <h1>Emotion Analyzer</h1>
+    <p class="subtitle">Log in to continue</p>
+
+    <div id="error-box" class="error-box" hidden></div>
+
+    <form id="login-form" autocomplete="on">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required autofocus>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required>
+
+      <button type="submit" id="submit-btn">Log In</button>
+    </form>
+
+    <p class="switch-link">Don't have an account? <a href="{{ url_for('register') }}">Register here</a></p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('error-box');
+  const btn = document.getElementById('submit-btn');
+  errorBox.hidden = true;
+  btn.disabled = true;
+  btn.textContent = 'Logging in...';
+
+  try {
+    const res = await fetch('{{ url_for("login") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      window.location.href = data.redirect;
+    } else {
+      errorBox.textContent = data.error || 'Login failed';
+      errorBox.hidden = false;
+    }
+  } catch (err) {
+    errorBox.textContent = 'Network error. Please try again.';
+    errorBox.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Log In';
+  }
+});
+</script>
+{% endblock %}
