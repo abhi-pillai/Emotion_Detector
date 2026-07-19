@@ -1,158 +1,118 @@
-# Emotion Analyzer with Authentication
+# Emotion Analyzer
 
-A Flask-based web application that analyzes emotions in text messages using Google's Gemini API and provides mental wellness insights with user authentication.
+A Flask web app that analyzes emotions in text messages using Google's Gemini
+API, tracks history per user, and surfaces a mental-wellness summary with
+suggested remedies. Rebuilt from an earlier prototype with authentication
+bugs fixed, missing frontend restored, and a real deployment path.
+
+> **Not a medical device.** This app gives lightweight, AI-generated
+> reflections for personal journaling. It is not a substitute for professional
+> mental health care. See [Crisis support](#crisis-support) below.
 
 ## Features
 
-- **User Authentication**: Secure registration and login system
-- **Emotion Analysis**: Analyzes text messages and classifies emotions (happy, sad, angry, neutral)
-- **Mental State Assessment**: Provides overall mental state analysis based on emotion history
-- **Personalized Remedies**: AI-generated suggestions for mental wellness
-- **User Dashboard**: View statistics and emotion history
-- **Session Management**: Each user has their own private emotion history
-- **Database Storage**: All data is securely stored in SQLite database
+- Register / login / logout with hashed passwords (Werkzeug) and
+  server-side sessions
+- Emotion classification (happy / sad / angry / neutral) with explanation,
+  powered by Gemini
+- Emotion history per user, capped and paginated via `?limit=`
+- Mental-state summary + actionable remedies generated from the last 10
+  entries (requires ≥2 entries)
+- Stats dashboard: total analyses, this-week count, per-emotion breakdown
+- Health check endpoint for container/load-balancer probes
 
-## Installation
-
-1. **Clone or download the project files**
-
-2. **Install dependencies**:
-```bash
-pip install -r requirements.txt
-```
-
-3. **Set up environment variables**:
-Create a `.env` file in the project root with:
-```
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-To get a Gemini API key:
-- Go to https://makersuite.google.com/app/apikey
-- Sign in with your Google account
-- Create a new API key
-
-4. **Run the application**:
-```bash
-python app.py
-```
-
-5. **Access the application**:
-Open your browser and go to `http://localhost:8000`
-
-## Usage
-
-### First Time Users
-
-1. **Register**: Click on "Register here" and create an account with:
-   - Username
-   - Email
-   - Password (minimum 6 characters)
-
-2. **Login**: Use your credentials to login
-
-### Using the Dashboard
-
-1. **Analyze Emotions**:
-   - Type your message in the text area
-   - Click "Analyze Emotion"
-   - View the detected emotion and explanation
-
-2. **View Statistics**:
-   - Total analyses count
-   - This week's analyses
-   - Breakdown by emotion type (Happy, Sad, Angry, Neutral)
-
-3. **Mental State Analysis**:
-   - Click "Analyze My Mental State"
-   - Requires at least 2 analyzed messages
-   - Get overall assessment and personalized remedies
-   - View emotion distribution chart
-
-4. **Emotion History**:
-   - Scroll down to see your complete emotion history
-   - Each entry shows: emotion, timestamp, message, and explanation
-   - Click "Clear History" to delete all entries
-
-5. **Logout**: Click the logout button in the navigation bar
-
-## Project Structure
+## Project structure
 
 ```
 emotion-analyzer/
-│
-├── app.py                 # Main Flask application
-├── requirements.txt       # Python dependencies
-├── .env                   # Environment variables (create this)
-│
+├── app.py                  # Flask app, routes, models
+├── config.py                # Environment-based configuration
+├── requirements.txt          # Runtime dependencies (pinned)
+├── requirements-dev.txt      # + pytest for local development
+├── .env.example               # Template for local secrets
+├── .gitignore
+├── Dockerfile                 # Production container image
+├── docker-compose.yml         # Local/single-host deployment
+├── Procfile                    # Heroku / Render style platforms
 ├── templates/
-│   ├── login.html        # Login page
-│   ├── register.html     # Registration page
-│   └── dashboard.html    # Main dashboard
-│
-└── static/
-    ├── css/
-    │   └── style.css     # Styling
-    └── js/
-        └── dashboard.js  # Dashboard functionality
+│   ├── base.html
+│   ├── login.html
+│   ├── register.html
+│   └── dashboard.html
+├── static/
+│   ├── css/style.css
+│   └── js/dashboard.js
+├── tests/
+│   └── test_app.py
+├── README.md                   # This file
+├── DEPLOYMENT.md                # Step-by-step deployment guide
+├── ARCHITECTURE.md              # System design, data model, request flow
+└── CHANGELOG.md                 # What changed vs. the original prototype
 ```
 
-## Database
+## Quick start (local)
 
-The application uses SQLite database (`emotions.db`) with two tables:
+```bash
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements-dev.txt
 
-- **User**: Stores user credentials (username, email, hashed password)
-- **EmotionHistory**: Stores emotion analysis results linked to users
+cp .env.example .env
+# edit .env: set GEMINI_API_KEY and SECRET_KEY
 
-The database is created automatically on first run.
+python app.py
+```
 
-## Security Features
+Open `http://localhost:8000`. The SQLite database is created automatically
+at `instance/emotions.db` on first run.
 
-- Password hashing using Werkzeug's security functions
-- Session-based authentication
-- User-specific data isolation
-- CSRF protection through session tokens
+Get a Gemini API key at https://aistudio.google.com/app/apikey (the old
+`makersuite.google.com` console has been folded into Google AI Studio).
 
-## API Endpoints
+## Running tests
 
-- `GET /` - Redirect to login or dashboard
-- `GET/POST /register` - User registration
-- `GET/POST /login` - User login
-- `GET /logout` - User logout
-- `GET /dashboard` - Main dashboard (requires login)
-- `POST /analyze` - Analyze emotion (requires login)
-- `GET /get-history` - Get emotion history (requires login)
-- `POST /analyze-mental-state` - Get mental state analysis (requires login)
-- `GET /get-stats` - Get user statistics (requires login)
-- `POST /clear-history` - Clear emotion history (requires login)
+```bash
+pytest
+```
 
-## Notes
+## API endpoints
 
-- The Gemini model used is `gemini-1.5-flash` (corrected from `gemini-3-flash-preview`)
-- Emotion history is limited to the last 10 entries for mental state analysis
-- All timestamps are in UTC
-- Session data is stored server-side for security
+| Method | Path                    | Auth | Description                              |
+|--------|-------------------------|------|--------------------------------------------|
+| GET    | `/`                     | -    | Redirect to login or dashboard             |
+| GET/POST | `/register`           | -    | Create an account                          |
+| GET/POST | `/login`              | -    | Log in                                     |
+| GET    | `/logout`               | ✔    | Clear session                              |
+| GET    | `/dashboard`            | ✔    | Main UI                                    |
+| POST   | `/analyze`              | ✔    | Classify emotion of a message              |
+| GET    | `/get-history`          | ✔    | Emotion history (`?limit=1-100`)           |
+| POST   | `/analyze-mental-state` | ✔    | Mental state + remedies from last 10 items |
+| GET    | `/get-stats`            | ✔    | Aggregate stats for the user               |
+| POST   | `/clear-history`        | ✔    | Delete all history for the user            |
+| GET    | `/healthz`              | -    | Health check (`{"status": "ok", ...}`)     |
 
-## Troubleshooting
+## Deployment
 
-**Issue**: "Invalid API key" error
-- **Solution**: Check your `.env` file has the correct `GEMINI_API_KEY`
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Docker, Render/Railway/Heroku, and
+bare-metal instructions, plus a production checklist.
 
-**Issue**: Database errors
-- **Solution**: Delete `emotions.db` and restart the app to recreate the database
+## Architecture
 
-**Issue**: "Need at least 2 analyzed messages"
-- **Solution**: Analyze at least 2 messages before requesting mental state analysis
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the data model, request flow, and
+design decisions.
 
-## Future Enhancements
+## What changed vs. the original prototype
 
-- Password reset functionality
-- Email verification
-- Export emotion history
-- More detailed analytics and visualizations
-- Mobile app version
-- Multi-language support
+See [CHANGELOG.md](CHANGELOG.md) for the full list of bugs fixed and
+features added.
+
+## Crisis support
+
+This tool is not equipped to handle crises. If you or someone you know is in
+immediate danger or considering self-harm, please contact local emergency
+services or a crisis line in your country right away (for example, in the
+US: call or text 988).
 
 ## License
 
-This project is open source and available for educational purposes.
+Open source, for educational use.
