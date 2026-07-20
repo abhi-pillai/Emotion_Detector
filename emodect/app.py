@@ -11,10 +11,12 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from dotenv import load_dotenv
 import google.generativeai as genai
 
 from config import get_config
+from mailer import send_email
 
 load_dotenv()
 
@@ -36,7 +38,7 @@ db = SQLAlchemy(app)
 # Gemini configuration (fails soft, not on import)
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 _gemini_model = None
 _gemini_error = None
 
@@ -71,6 +73,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    email_verified = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     emotions = db.relationship(
         "EmotionHistory", backref="user", lazy=True, cascade="all, delete-orphan"
@@ -94,6 +97,39 @@ class EmotionHistory(db.Model):
 
 with app.app_context():
     db.create_all()
+
+# Signed, time-limited tokens for email verification and password reset.
+# Uses the app's SECRET_KEY, so tokens become invalid if SECRET_KEY changes.
+_serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
+EMAIL_VERIFY_SALT = "email-verify"
+PASSWORD_RESET_SALT = "password-reset"
+EMAIL_VERIFY_MAX_AGE = 60 * 60 * 24  # 24 hours
+PASSWORD_RESET_MAX_AGE = 60 * 60  # 1 hour
+
+
+def send_verification_email(user):
+    token = _serializer.dumps(user.email, salt=EMAIL_VERIFY_SALT)
+    link = f"{app.config['APP_BASE_URL']}/verify-email/{token}"
+    body = (
+        f"Hi {user.username},\n\n"
+        f"Please confirm your email address by visiting this link "
+        f"(expires in 24 hours):\n{link}\n\n"
+        f"If you didn't create this account, you can ignore this email."
+    )
+    send_email(app, user.email, "Confirm your Emotion Analyzer account", body)
+
+
+def send_password_reset_email(user):
+    token = _serializer.dumps(user.email, salt=PASSWORD_RESET_SALT)
+    link = f"{app.config['APP_BASE_URL']}/reset-password/{token}"
+    body = (
+        f"Hi {user.username},\n\n"
+        f"You (or someone else) requested a password reset. This link "
+        f"expires in 1 hour:\n{link}\n\n"
+        f"If you didn't request this, you can safely ignore this email - "
+        f"your password will not be changed."
+    )
+    send_email(app, user.email, "Reset your Emotion Analyzer password", body)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -214,11 +250,18 @@ def register():
         try:
             db.session.add(new_user)
             db.session.commit()
-            return jsonify({"success": True, "message": "Registration successful! Please login."})
-        except Exception as exc:
+        except Exception:
             db.session.rollback()
             logger.exception("Registration failed")
             return jsonify({"error": "Registration failed. Please try again."}), 500
+
+        send_verification_email(new_user)
+        return jsonify(
+            {
+                "success": True,
+                "message": "Registration successful! Check your email for a confirmation link before logging in.",
+            }
+        )
 
     return render_template("register.html")
 
@@ -238,14 +281,22 @@ def login():
 
         user = User.query.filter_by(username=username).first()
 
-        if user and user.check_password(password):
-            session.clear()
-            session["user_id"] = user.id
-            session["username"] = user.username
-            session.permanent = True
-            return jsonify({"success": True, "redirect": url_for("dashboard")})
+        if not user or not user.check_password(password):
+            return jsonify({"error": "Invalid username or password"}), 401
 
-        return jsonify({"error": "Invalid username or password"}), 401
+        if not user.email_verified:
+            return jsonify(
+                {
+                    "error": "Please confirm your email before logging in.",
+                    "unverified": True,
+                }
+            ), 403
+
+        session.clear()
+        session["user_id"] = user.id
+        session["username"] = user.username
+        session.permanent = True
+        return jsonify({"success": True, "redirect": url_for("dashboard")})
 
     return render_template("login.html")
 
@@ -254,6 +305,122 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/verify-email/<token>")
+def verify_email(token):
+    try:
+        email = _serializer.loads(token, salt=EMAIL_VERIFY_SALT, max_age=EMAIL_VERIFY_MAX_AGE)
+    except SignatureExpired:
+        return render_template("message.html", title="Link expired",
+                                message="That confirmation link has expired. Please request a new one.",
+                                action_url=url_for("resend_confirmation"), action_label="Resend confirmation email")
+    except BadSignature:
+        return render_template("message.html", title="Invalid link",
+                                message="That confirmation link is invalid.",
+                                action_url=url_for("register"), action_label="Back to register")
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return render_template("message.html", title="Account not found",
+                                message="We couldn't find an account for that link.",
+                                action_url=url_for("register"), action_label="Back to register")
+
+    if not user.email_verified:
+        user.email_verified = True
+        db.session.commit()
+
+    return render_template("message.html", title="Email confirmed",
+                            message="Your email has been confirmed. You can now log in.",
+                            action_url=url_for("login"), action_label="Go to login")
+
+
+@app.route("/resend-confirmation", methods=["GET", "POST"])
+def resend_confirmation():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        email = (data.get("email") or "").strip().lower()
+        user = User.query.filter_by(email=email).first()
+        # Always return the same response whether or not the account exists,
+        # so this endpoint can't be used to check which emails are registered.
+        if user and not user.email_verified:
+            send_verification_email(user)
+        return jsonify({"success": True, "message": "If that account exists and isn't verified yet, a new confirmation email has been sent."})
+
+    return render_template("resend_confirmation.html")
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        email = (data.get("email") or "").strip().lower()
+        user = User.query.filter_by(email=email).first()
+        if user:
+            send_password_reset_email(user)
+        # Same response regardless, to avoid leaking which emails are registered.
+        return jsonify({"success": True, "message": "If that email is registered, a password reset link has been sent."})
+
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    try:
+        email = _serializer.loads(token, salt=PASSWORD_RESET_SALT, max_age=PASSWORD_RESET_MAX_AGE)
+    except SignatureExpired:
+        if request.method == "POST":
+            return jsonify({"error": "This reset link has expired. Please request a new one."}), 400
+        return render_template("message.html", title="Link expired",
+                                message="That reset link has expired. Please request a new one.",
+                                action_url=url_for("forgot_password"), action_label="Request new link")
+    except BadSignature:
+        if request.method == "POST":
+            return jsonify({"error": "This reset link is invalid."}), 400
+        return render_template("message.html", title="Invalid link",
+                                message="That reset link is invalid.",
+                                action_url=url_for("forgot_password"), action_label="Request new link")
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        if request.method == "POST":
+            return jsonify({"error": "Account not found."}), 400
+        return render_template("message.html", title="Account not found",
+                                message="We couldn't find an account for that link.",
+                                action_url=url_for("login"), action_label="Back to login")
+
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        password = data.get("password") or ""
+        if len(password) < 6:
+            return jsonify({"error": "Password must be at least 6 characters"}), 400
+        user.set_password(password)
+        db.session.commit()
+        return jsonify({"success": True, "message": "Password updated. You can now log in."})
+
+    return render_template("reset_password.html", token=token)
+
+
+@app.route("/delete-account", methods=["POST"])
+@login_required
+def delete_account():
+    data = request.get_json(silent=True) or {}
+    password = data.get("password") or ""
+
+    user = db.session.get(User, session["user_id"])
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Incorrect password"}), 401
+
+    try:
+        db.session.delete(user)  # cascades to EmotionHistory via relationship
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to delete account")
+        return jsonify({"error": "Failed to delete account. Please try again."}), 500
+
+    session.clear()
+    return jsonify({"success": True, "redirect": url_for("login")})
 
 
 @app.route("/dashboard")
