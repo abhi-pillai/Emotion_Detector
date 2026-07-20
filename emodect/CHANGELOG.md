@@ -59,6 +59,14 @@ run. Beyond restoring those, the following bugs and gaps were fixed.
    a different working directory. Now resolved to an explicit
    `instance/` directory that's created if missing.
 
+10. **SQLite URI broke on Windows** — building the URI with
+    `os.path.join` produced backslashes (e.g. `D:\Projects\...`) baked
+    into a `sqlite:///` URI, which SQLite can't parse, causing
+    `sqlite3.OperationalError: unable to open database file` on every
+    Windows machine. `config.py` now normalizes the path with
+    `pathlib.Path(...).as_posix()` before building the URI, which is
+    correct on both Windows and POSIX systems.
+
 ## Gaps filled (previously missing entirely)
 
 - `templates/base.html`, `login.html`, `register.html`, `dashboard.html`
