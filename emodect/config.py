@@ -39,6 +39,19 @@ class BaseConfig:
     SESSION_COOKIE_SAMESITE = "Lax"
     DEBUG = False
 
+    # --- Email (verification + password reset) ---
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", 587))
+    MAIL_USE_TLS = _bool_env("MAIL_USE_TLS", True)
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", MAIL_USERNAME)
+    # Base URL used to build links inside emails, e.g. https://myapp.onrender.com
+    APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
+    # If no MAIL_SERVER is configured, emails are printed to the console/log
+    # instead of sent, so local dev works without a real mail account.
+    MAIL_SUPPRESS_SEND = _bool_env("MAIL_SUPPRESS_SEND", False) or not os.getenv("MAIL_SERVER")
+
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
