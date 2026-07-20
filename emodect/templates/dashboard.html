@@ -45,7 +45,26 @@
     </div>
   </section>
 
+  <section class="card">
+    <h2>Danger Zone</h2>
+    <p class="subtitle" style="margin-top:0;">Permanently delete your account and all of your emotion history. This cannot be undone.</p>
+    <button id="delete-account-btn" class="btn-danger">Delete My Account</button>
+  </section>
+
 </main>
+
+<div id="delete-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <h2>Confirm Account Deletion</h2>
+    <p>Enter your password to permanently delete your account and all data.</p>
+    <div id="delete-error-box" class="error-box" hidden></div>
+    <input type="password" id="delete-password" placeholder="Your password">
+    <div class="row" style="margin-top:16px;">
+      <button id="confirm-delete-btn" class="btn-danger">Delete Permanently</button>
+      <button id="cancel-delete-btn" style="background:var(--muted);">Cancel</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
