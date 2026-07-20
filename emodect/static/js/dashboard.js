@@ -153,9 +153,40 @@ async function clearHistory() {
   }
 }
 
+async function deleteAccount() {
+  const passwordInput = $('delete-password');
+  const errorBox = $('delete-error-box');
+  const btn = $('confirm-delete-btn');
+  errorBox.hidden = true;
+  btn.disabled = true;
+  btn.textContent = 'Deleting...';
+
+  try {
+    const data = await apiFetch('/delete-account', {
+      method: 'POST',
+      body: JSON.stringify({ password: passwordInput.value }),
+    });
+    window.location.href = data.redirect;
+  } catch (err) {
+    errorBox.textContent = err.message;
+    errorBox.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Delete Permanently';
+  }
+}
+
 $('analyze-btn').addEventListener('click', analyzeEmotion);
 $('mental-state-btn').addEventListener('click', analyzeMentalState);
 $('clear-history-btn').addEventListener('click', clearHistory);
+
+$('delete-account-btn').addEventListener('click', () => {
+  $('delete-password').value = '';
+  $('delete-error-box').hidden = true;
+  $('delete-modal').hidden = false;
+});
+$('cancel-delete-btn').addEventListener('click', () => { $('delete-modal').hidden = true; });
+$('confirm-delete-btn').addEventListener('click', deleteAccount);
 
 // Allow Ctrl/Cmd+Enter to submit the message textarea
 $('message-input').addEventListener('keydown', (e) => {
