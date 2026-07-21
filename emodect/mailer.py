@@ -9,9 +9,44 @@ instead of sent, so you can copy the link straight out of the console.
 """
 import logging
 import smtplib
+import socket
 from email.mime.text import MIMEText
 
 logger = logging.getLogger("emotion-analyzer.mail")
+
+
+def _connect_ipv4(host, port, timeout):
+    """Connect to (host, port) forcing IPv4.
+
+    Many PaaS hosts (Render included) don't have real IPv6 egress, even
+    though the container's socket library will happily try an IPv6 address
+    first if the DNS record has one. That produces `OSError: [Errno 101]
+    Network is unreachable` instead of a clean connection failure or
+    timeout. Explicitly resolving and connecting over IPv4 avoids this.
+    """
+    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    last_exc = None
+    for family, socktype, proto, _canonname, sockaddr in infos:
+        try:
+            sock = socket.socket(family, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            last_exc = exc
+    raise last_exc or OSError(f"Could not resolve/connect to {host}:{port} over IPv4")
+
+
+class _IPv4SMTP(smtplib.SMTP):
+    """smtplib.SMTP subclass that connects over IPv4 only.
+
+    The hostname is still passed through normally, so TLS certificate
+    hostname verification (starttls) continues to work correctly - only
+    the underlying socket connection is forced to IPv4.
+    """
+
+    def _get_socket(self, host, port, timeout):
+        return _connect_ipv4(host, port, timeout)
 
 
 def send_email(app, to_address, subject, body):
@@ -36,7 +71,7 @@ def send_email(app, to_address, subject, body):
     msg["To"] = to_address
 
     try:
-        with smtplib.SMTP(app.config["MAIL_SERVER"], app.config["MAIL_PORT"], timeout=10) as server:
+        with _IPv4SMTP(app.config["MAIL_SERVER"], app.config["MAIL_PORT"], timeout=10) as server:
             if app.config.get("MAIL_USE_TLS"):
                 server.starttls()
             if app.config.get("MAIL_USERNAME"):
