@@ -53,17 +53,18 @@ class BaseConfig:
     SESSION_COOKIE_SAMESITE = "Lax"
     DEBUG = False
 
-    # --- Email (verification + password reset), sent via the Brevo API ---
-    BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
-    # Must be an email address you've verified as a "Sender" in Brevo's
-    # dashboard (Senders, Domains & Dedicated IPs -> Senders).
+    # --- Email (verification + password reset), sent via the Gmail API ---
+    GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
+    GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
+    GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN", "")
+    # The Gmail address you authorized when generating the refresh token.
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "")
     # Base URL used to build links inside emails, e.g. https://myapp.onrender.com
     APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
-    # If no BREVO_API_KEY is configured, emails are printed to the
-    # console/log instead of sent, so local dev works without a real
-    # email provider account.
-    MAIL_SUPPRESS_SEND = _bool_env("MAIL_SUPPRESS_SEND", False) or not os.getenv("BREVO_API_KEY")
+    # If no GMAIL_REFRESH_TOKEN is configured, emails are printed to the
+    # console/log instead of sent, so local dev works without real Gmail
+    # OAuth credentials set up.
+    MAIL_SUPPRESS_SEND = _bool_env("MAIL_SUPPRESS_SEND", False) or not os.getenv("GMAIL_REFRESH_TOKEN")
 
 
 class DevelopmentConfig(BaseConfig):
