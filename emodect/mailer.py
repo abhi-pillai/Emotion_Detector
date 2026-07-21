@@ -7,57 +7,50 @@ two email types: verification links and password reset links.
 If MAIL_SERVER isn't configured (local development), emails are logged
 instead of sent, so you can copy the link straight out of the console.
 """
+"""
+Minimal email sending helper - uses the Brevo (formerly Sendinblue) HTTPS
+transactional email API.
+
+Why an HTTPS API instead of SMTP: many PaaS hosts (Render included) block
+outbound SMTP ports (25/465/587) at the network level to prevent their
+infrastructure being used for spam. HTTPS (443) is never blocked, so
+sending mail via a provider's REST API sidesteps that entirely.
+
+Why Brevo specifically (over Resend): Resend only lets you send to your
+own account email until you verify a domain you own. Brevo's free tier
+lets you send to ANY recipient as soon as you verify a single sender
+email address (just click a link Brevo emails you) - no domain needed.
+Free tier: 300 emails/day, no expiration.
+
+Setup:
+  1. Sign up free at https://app.brevo.com
+  2. Add your sender email under Senders, Domains & Dedicated IPs ->
+     Senders -> Add a Sender, then click the verification link Brevo
+     emails you.
+  3. Create an API key under SMTP & API -> API Keys -> Generate a new API key.
+  4. Set BREVO_API_KEY and MAIL_DEFAULT_SENDER (the verified sender
+     address) in your environment.
+
+If BREVO_API_KEY isn't configured (local development), emails are logged
+instead of sent, so you can copy the link straight out of the console.
+"""
 import logging
-import smtplib
-import socket
-from email.mime.text import MIMEText
+import requests
 
 logger = logging.getLogger("emotion-analyzer.mail")
 
-
-def _connect_ipv4(host, port, timeout):
-    """Connect to (host, port) forcing IPv4.
-
-    Many PaaS hosts (Render included) don't have real IPv6 egress, even
-    though the container's socket library will happily try an IPv6 address
-    first if the DNS record has one. That produces `OSError: [Errno 101]
-    Network is unreachable` instead of a clean connection failure or
-    timeout. Explicitly resolving and connecting over IPv4 avoids this.
-    """
-    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-    last_exc = None
-    for family, socktype, proto, _canonname, sockaddr in infos:
-        try:
-            sock = socket.socket(family, socktype, proto)
-            sock.settimeout(timeout)
-            sock.connect(sockaddr)
-            return sock
-        except OSError as exc:
-            last_exc = exc
-    raise last_exc or OSError(f"Could not resolve/connect to {host}:{port} over IPv4")
-
-
-class _IPv4SMTP(smtplib.SMTP):
-    """smtplib.SMTP subclass that connects over IPv4 only.
-
-    The hostname is still passed through normally, so TLS certificate
-    hostname verification (starttls) continues to work correctly - only
-    the underlying socket connection is forced to IPv4.
-    """
-
-    def _get_socket(self, host, port, timeout):
-        return _connect_ipv4(host, port, timeout)
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def send_email(app, to_address, subject, body):
-    """Send a plain-text email using the app's MAIL_* config.
+    """Send a plain-text email via the Brevo API.
 
-    Returns True if a real send was attempted successfully (or suppressed
-    intentionally for local dev), False if sending failed.
+    Returns True if the send succeeded (or was intentionally suppressed
+    for local dev), False if it failed.
     """
     if app.config.get("MAIL_SUPPRESS_SEND"):
         logger.info(
-            "MAIL_SUPPRESS_SEND is on (no MAIL_SERVER configured) - not sending email.\n"
+            "MAIL_SUPPRESS_SEND is on (no BREVO_API_KEY configured) - not sending email.\n"
             "--- Would have sent ---\nTo: %s\nSubject: %s\n\n%s\n------------------------",
             to_address,
             subject,
@@ -65,19 +58,27 @@ def send_email(app, to_address, subject, body):
         )
         return True
 
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = app.config["MAIL_DEFAULT_SENDER"]
-    msg["To"] = to_address
+    payload = {
+        "sender": {"email": app.config["MAIL_DEFAULT_SENDER"]},
+        "to": [{"email": to_address}],
+        "subject": subject,
+        "textContent": body,
+    }
+    headers = {
+        "api-key": app.config["BREVO_API_KEY"],
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
 
     try:
-        with _IPv4SMTP(app.config["MAIL_SERVER"], app.config["MAIL_PORT"], timeout=10) as server:
-            if app.config.get("MAIL_USE_TLS"):
-                server.starttls()
-            if app.config.get("MAIL_USERNAME"):
-                server.login(app.config["MAIL_USERNAME"], app.config["MAIL_PASSWORD"])
-            server.sendmail(app.config["MAIL_DEFAULT_SENDER"], [to_address], msg.as_string())
+        response = requests.post(BREVO_API_URL, json=payload, headers=headers, timeout=10)
+        if response.status_code >= 400:
+            logger.error(
+                "Brevo API returned %s sending to %s: %s",
+                response.status_code, to_address, response.text,
+            )
+            return False
         return True
-    except Exception:
+    except requests.RequestException:
         logger.exception("Failed to send email to %s", to_address)
         return False
