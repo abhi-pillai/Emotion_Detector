@@ -34,6 +34,20 @@ class BaseConfig:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-key-change-me-in-production")
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", f"sqlite:///{_DB_PATH}")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Managed Postgres (Render, Supabase, Neon, etc.) will silently close
+    # idle connections. Without these options, SQLAlchemy can hand out a
+    # connection from its pool that's already dead, causing intermittent
+    # "SSL SYSCALL error: EOF detected" / "server closed the connection
+    # unexpectedly" errors on requests that happen to grab a stale one.
+    #   pool_pre_ping - test each connection with a cheap query before
+    #                    using it; transparently reconnects if it's dead
+    #   pool_recycle   - proactively recycle connections older than this
+    #                    many seconds, before the DB server has a chance to
+    #                    kill them itself
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 280,
+    }
     PERMANENT_SESSION_LIFETIME = timedelta(days=7)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
